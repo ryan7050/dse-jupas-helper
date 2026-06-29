@@ -29,12 +29,6 @@ app.post('/api/chat-stream', async (req, res) => {
         return res.status(400).json({ error: 'Message is required' });
     }
 
-    // 🎯 這裡的 Header 是讓 Chrome 能夠一字一字顯示的關鍵！
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform'); // 加上 no-transform 防止 Chrome 壓縮快取
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // 🎯 強制雲端平台不要緩衝，立刻吐字
-
     try {
         const cozeResponse = await fetch('https://5d399xsf75.coze.site/stream_run', {
             method: 'POST',
@@ -57,12 +51,12 @@ app.post('/api/chat-stream', async (req, res) => {
         if (!cozeResponse.ok) throw new Error(`Coze API error: ${cozeResponse.statusText}`);
 
         const reader = cozeResponse.body;
-        
+        let fullAnswer = '';
+
         if (reader) {
             let buffer = '';
             for await (const chunk of reader) {
                 buffer += typeof chunk === 'string' ? chunk : chunk.toString();
-                
                 const lines = buffer.split('\n');
                 buffer = lines.pop(); 
 
@@ -74,32 +68,33 @@ app.post('/api/chat-stream', async (req, res) => {
                         const jsonStr = line.replace('data:', '').trim();
                         const parsed = JSON.parse(jsonStr);
                         if (parsed.content && parsed.content.answer) {
-                            res.write(parsed.content.answer); 
-                            if (res.flush) res.flush(); // 強制沖刷緩衝區
+                            fullAnswer += parsed.content.answer; // 🎯 把所有字拼起來
                         }
                     } catch (e) {
                         const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
                         if (match && match[1]) {
                             try {
                                 const cleanText = JSON.parse(`"${match[1]}"`);
-                                res.write(cleanText);
+                                fullAnswer += cleanText;
                             } catch(err) {
-                                res.write(match[1].replace(/\\n/g, '\n'));
+                                fullAnswer += match[1].replace(/\\n/g, '\n');
                             }
-                            if (res.flush) res.flush();
                         }
                     }
                 }
             }
-            res.end();
+            
+            // 🎯 當完整答案收集完畢後，一次過以普通的文字格式傳給前端
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.send(fullAnswer);
         } else {
             throw new Error('Response body is empty');
         }
 
     } catch (error) {
         console.error('Fetch error:', error);
-        res.write('❌ 後端伺服器連線失敗');
-        res.end();
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.status(500).send('❌ 後端伺服器連線失敗');
     }
 });
 
