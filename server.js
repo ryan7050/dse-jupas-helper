@@ -33,62 +33,49 @@ app.post('/api/chat-stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
-        const cozeResponse = await fetch('https://5d399xsf75.coze.site/stream_run', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                content: {
-                    query: {
-                        prompt: [{ type: "text", content: { text: message } }]
-                    },
-                    type: "query",
-                    session_id: `session_${Date.now()}`,
-                    project_id: PROJECT_ID
-                }
-            })
-        });
-
         if (!cozeResponse.ok) throw new Error(`Coze API error: ${cozeResponse.statusText}`);
 
-        let buffer = '';
-        cozeResponse.body.on('data', (chunk) => {
-            buffer += chunk.toString();
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); 
+        // 🎯 修正後的 Web Stream 串流讀取機制（完美相容 Vercel）
+        const reader = cozeResponse.body;
+        
+        if (reader) {
+            let buffer = '';
+            // 使用符合 Web Stream 的異步迭代器讀取數據
+            for await (const chunk of reader) {
+                // 將 chunk 轉為字串（相容不同環境的 buffer 或物件）
+                buffer += typeof chunk === 'string' ? chunk : chunk.toString();
+                
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // 留下未完整的最後一行
 
-            for (let line of lines) {
-                line = line.trim();
-                if (!line || !line.startsWith('data:')) continue;
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line || !line.startsWith('data:')) continue;
 
-                try {
-                    const jsonStr = line.replace('data:', '').trim();
-                    const parsed = JSON.parse(jsonStr);
-
-                    // 🎯 精準攔截文字內容
-                    if (parsed.content && parsed.content.answer) {
-                        res.write(parsed.content.answer); 
-                    }
-                } catch (e) {
-                    // JSON 解析失敗時的保底機制
-                    const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
-                    if (match && match[1]) {
-                        try {
-                            const cleanText = JSON.parse(`"${match[1]}"`);
-                            res.write(cleanText);
-                        } catch(err) {
-                            res.write(match[1].replace(/\\n/g, '\n'));
+                    try {
+                        const jsonStr = line.replace('data:', '').trim();
+                        const parsed = JSON.parse(jsonStr);
+                        if (parsed.content && parsed.content.answer) {
+                            res.write(parsed.content.answer); 
+                        }
+                    } catch (e) {
+                        // 當 JSON 解析不完全時的保底 RegExp
+                        const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
+                        if (match && match[1]) {
+                            try {
+                                const cleanText = JSON.parse(`"${match[1]}"`);
+                                res.write(cleanText);
+                            } catch(err) {
+                                res.write(match[1].replace(/\\n/g, '\n'));
+                            }
                         }
                     }
                 }
             }
-        });
-
-        cozeResponse.body.on('end', () => {
             res.end();
-        });
+        } else {
+            throw new Error('Response body is empty');
+        }
 
     } catch (error) {
         console.error('Fetch error:', error);
