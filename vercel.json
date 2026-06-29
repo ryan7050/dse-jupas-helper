@@ -5,6 +5,6 @@
   ],
   "routes": [
     { "src": "/api/chat-stream", "dest": "server.js" },
-    { "src": "/(.*)", "dest": "/$1" }
+    { "src": "/(.*)", "dest": "index.html" }
   ]
 }
