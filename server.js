@@ -5,6 +5,7 @@ const express = require('express');
 const fetch = require('node-fetch');
 const path = require('path');
 
+module.exports = app;
 const app = express();
 
 // 2. 從環境變數讀取安全設定
@@ -91,6 +92,10 @@ app.post('/api/chat-stream', async (req, res) => {
         res.write('❌ 後端伺服器連線失敗');
         res.end();
     }
+});
+
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // 5. 啟動伺服器監聽
