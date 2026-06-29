@@ -8,8 +8,8 @@ const express = require('express');
 // const fetch = require('node-fetch');
 const path = require('path');
 
-module.exports = app;
 const app = express();
+module.exports = app;
 
 // 2. 從環境變數讀取安全設定
 const API_TOKEN = process.env.API_TOKEN;
