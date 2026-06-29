@@ -1,4 +1,5 @@
 // 1. 載入環境變數（必須在最頂部）
+
 // 只有在本地開發環境時，才載入 dotenv
 if (process.env.NODE_ENV !== 'production') {
     require('dotenv').config();
@@ -28,12 +29,13 @@ app.post('/api/chat-stream', async (req, res) => {
         return res.status(400).json({ error: 'Message is required' });
     }
 
+    // 🎯 這裡的 Header 是讓 Chrome 能夠一字一字顯示的關鍵！
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform'); // 加上 no-transform 防止 Chrome 壓縮快取
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // 🎯 強制雲端平台不要緩衝，立刻吐字
 
     try {
-        // 🎯 1. 確保這段發送給 Coze 的代碼存在
         const cozeResponse = await fetch('https://5d399xsf75.coze.site/stream_run', {
             method: 'POST',
             headers: {
@@ -54,7 +56,6 @@ app.post('/api/chat-stream', async (req, res) => {
 
         if (!cozeResponse.ok) throw new Error(`Coze API error: ${cozeResponse.statusText}`);
 
-        // 🎯 2. 這是剛剛修改的 Web Stream 串流讀取機制
         const reader = cozeResponse.body;
         
         if (reader) {
@@ -74,6 +75,7 @@ app.post('/api/chat-stream', async (req, res) => {
                         const parsed = JSON.parse(jsonStr);
                         if (parsed.content && parsed.content.answer) {
                             res.write(parsed.content.answer); 
+                            if (res.flush) res.flush(); // 強制沖刷緩衝區
                         }
                     } catch (e) {
                         const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
@@ -84,6 +86,7 @@ app.post('/api/chat-stream', async (req, res) => {
                             } catch(err) {
                                 res.write(match[1].replace(/\\n/g, '\n'));
                             }
+                            if (res.flush) res.flush();
                         }
                     }
                 }
