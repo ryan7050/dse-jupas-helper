@@ -50,66 +50,55 @@ app.post('/api/chat-stream', async (req, res) => {
 
         if (!cozeResponse.ok) throw new Error(`Coze API error: ${cozeResponse.statusText}`);
 
-        const reader = cozeResponse.body;
+        // 🎯 終極殺手鐧：直接把整個回應當成純文字一次讀出來！完全避開串流陷阱！
+        const rawText = await cozeResponse.text();
+        
+        // 這樣絕對能印出東西！
+        console.log("Coze 完整原始回應:", rawText); 
+
         let fullAnswer = '';
+        const lines = rawText.split('\n');
 
-        if (reader) {
-            let buffer = '';
-            for await (const chunk of reader) {
-                buffer += typeof chunk === 'string' ? chunk : chunk.toString();
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); 
+        for (let line of lines) {
+            let cleanLine = line.trim();
+            if (!cleanLine) continue;
 
-                for (let line of lines) {
-                    let cleanLine = line.trim();
-                    if (!cleanLine) continue;
+            if (cleanLine.startsWith('data:')) {
+                cleanLine = cleanLine.replace('data:', '').trim();
+            }
 
-                    // 🎯 【關鍵修正】把日誌移到最前面，不管是啥通通印出來看！
-                    console.log("Coze 收到原始行:", cleanLine);
-
-                    // 如果開頭有 data:，先把它去掉方便解析
-                    if (cleanLine.startsWith('data:')) {
-                        cleanLine = cleanLine.replace('data:', '').trim();
-                    }
-
+            try {
+                // 嘗試解析 JSON 並抓字
+                const parsed = JSON.parse(cleanLine);
+                if (parsed.content && parsed.content.answer) {
+                    fullAnswer += parsed.content.answer;
+                } else if (parsed.content && typeof parsed.content === 'string') {
+                    fullAnswer += parsed.content;
+                } else if (parsed.answer) {
+                    fullAnswer += parsed.answer;
+                } else if (parsed.messages && parsed.messages[0] && parsed.messages[0].content) {
+                    fullAnswer += parsed.messages[0].content;
+                }
+            } catch (e) {
+                // 如果不是標準 JSON，用正則表達式硬抓
+                const matchAnswer = cleanLine.match(/"answer"\s*:\s*"([^"]+)"/);
+                const matchContent = cleanLine.match(/"content"\s*:\s*"([^"]+)"/);
+                let targetText = (matchAnswer && matchAnswer[1]) || (matchContent && matchContent[1]);
+                
+                if (targetText) {
                     try {
-                        const parsed = JSON.parse(cleanLine);
-                        
-                        // 🎯 深度挖掘所有可能藏字的地方
-                        if (parsed.content && parsed.content.answer) {
-                            fullAnswer += parsed.content.answer;
-                        } else if (parsed.content && typeof parsed.content === 'string') {
-                            fullAnswer += parsed.content;
-                        } else if (parsed.answer) {
-                            fullAnswer += parsed.answer;
-                        } else if (parsed.messages && parsed.messages[0] && parsed.messages[0].content) {
-                            fullAnswer += parsed.messages[0].content;
-                        }
-                    } catch (e) {
-                        // 如果不是標準 JSON，嘗試用正則表達式強行抓取 "answer":"..." 或 "content":"..."
-                        const matchAnswer = cleanLine.match(/"answer"\s*:\s*"([^"]+)"/);
-                        const matchContent = cleanLine.match(/"content"\s*:\s*"([^"]+)"/);
-                        let targetText = (matchAnswer && matchAnswer[1]) || (matchContent && matchContent[1]);
-                        
-                        if (targetText) {
-                            try {
-                                fullAnswer += JSON.parse(`"${targetText}"`);
-                            } catch(err) {
-                                fullAnswer += targetText.replace(/\\n/g, '\n');
-                            }
-                        }
+                        fullAnswer += JSON.parse(`"${targetText}"`);
+                    } catch(err) {
+                        fullAnswer += targetText.replace(/\\n/g, '\n');
                     }
                 }
             }
-            
-            console.log("最終拼湊出的完整回答:", fullAnswer);
-
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            // 如果最後還是空的，就把最後一行的原始內容丟回前端當線索
-            res.send(fullAnswer || "⚠️ 無法解析文字，請至 Vercel Logs 查看最新印出的「Coze 收到原始行」。");
-        } else {
-            throw new Error('Response body is empty');
         }
+        
+        console.log("最終拼湊出的完整回答:", fullAnswer);
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send(fullAnswer || "⚠️ 依然無法解析文字，請去 Logs 查看「Coze 完整原始回應」。");
 
     } catch (error) {
         console.error('Fetch error:', error);
