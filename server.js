@@ -64,29 +64,44 @@ app.post('/api/chat-stream', async (req, res) => {
                     line = line.trim();
                     if (!line || !line.startsWith('data:')) continue;
 
+                    // 🎯 【新增核心日誌】直接在 Vercel 終端機印出每一行的原始內容
+                    console.log("Coze 原始數據行:", line);
+
                     try {
                         const jsonStr = line.replace('data:', '').trim();
                         const parsed = JSON.parse(jsonStr);
+                        
+                        // 🎯 瘋狂相容性檢查：不管字藏在哪裡通通抓出來！
                         if (parsed.content && parsed.content.answer) {
-                            fullAnswer += parsed.content.answer; // 🎯 把所有字拼起來
+                            fullAnswer += parsed.content.answer;
+                        } else if (parsed.content && typeof parsed.content === 'string') {
+                            fullAnswer += parsed.content;
+                        } else if (parsed.answer) {
+                            fullAnswer += parsed.answer;
                         }
                     } catch (e) {
-                        const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
-                        if (match && match[1]) {
+                        // 如果 JSON 解析失敗，用最強的正則表達式強行捕捉任何叫 answer 或 content 的中文字
+                        const matchAnswer = line.match(/"answer"\s*:\s*"([^"]+)"/);
+                        const matchContent = line.match(/"content"\s*:\s*"([^"]+)"/);
+                        
+                        let targetText = (matchAnswer && matchAnswer[1]) || (matchContent && matchContent[1]);
+                        
+                        if (targetText) {
                             try {
-                                const cleanText = JSON.parse(`"${match[1]}"`);
-                                fullAnswer += cleanText;
+                                fullAnswer += JSON.parse(`"${targetText}"`);
                             } catch(err) {
-                                fullAnswer += match[1].replace(/\\n/g, '\n');
+                                fullAnswer += targetText.replace(/\\n/g, '\n');
                             }
                         }
                     }
                 }
             }
             
-            // 🎯 當完整答案收集完畢後，一次過以普通的文字格式傳給前端
+            // 🎯 印出最後拼湊出來的總成品，看看是不是空的
+            console.log("最終拼湊出的完整回答:", fullAnswer);
+
             res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.send(fullAnswer);
+            res.send(fullAnswer || "⚠️ 雖然成功連線，但後端無法從 Coze 的數據中解析出文字。請檢查 Vercel Logs 查看原始結構。");
         } else {
             throw new Error('Response body is empty');
         }
