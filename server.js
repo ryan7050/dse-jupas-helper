@@ -1,8 +1,11 @@
 // 1. 載入環境變數（必須在最頂部）
-require('dotenv').config();
+// 只有在本地開發環境時，才載入 dotenv
+if (process.env.NODE_ENV !== 'production') {
+    require('dotenv').config();
+}
 
 const express = require('express');
-const fetch = require('node-fetch');
+// const fetch = require('node-fetch');
 const path = require('path');
 
 module.exports = app;
