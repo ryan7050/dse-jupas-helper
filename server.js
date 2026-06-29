@@ -33,20 +33,37 @@ app.post('/api/chat-stream', async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
+        // 🎯 1. 確保這段發送給 Coze 的代碼存在
+        const cozeResponse = await fetch('https://5d399xsf75.coze.site/stream_run', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${API_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                content: {
+                    query: {
+                        prompt: [{ type: "text", content: { text: message } }]
+                    },
+                    type: "query",
+                    session_id: `session_${Date.now()}`,
+                    project_id: PROJECT_ID
+                }
+            })
+        });
+
         if (!cozeResponse.ok) throw new Error(`Coze API error: ${cozeResponse.statusText}`);
 
-        // 🎯 修正後的 Web Stream 串流讀取機制（完美相容 Vercel）
+        // 🎯 2. 這是剛剛修改的 Web Stream 串流讀取機制
         const reader = cozeResponse.body;
         
         if (reader) {
             let buffer = '';
-            // 使用符合 Web Stream 的異步迭代器讀取數據
             for await (const chunk of reader) {
-                // 將 chunk 轉為字串（相容不同環境的 buffer 或物件）
                 buffer += typeof chunk === 'string' ? chunk : chunk.toString();
                 
                 const lines = buffer.split('\n');
-                buffer = lines.pop(); // 留下未完整的最後一行
+                buffer = lines.pop(); 
 
                 for (let line of lines) {
                     line = line.trim();
@@ -59,7 +76,6 @@ app.post('/api/chat-stream', async (req, res) => {
                             res.write(parsed.content.answer); 
                         }
                     } catch (e) {
-                        // 當 JSON 解析不完全時的保底 RegExp
                         const match = line.match(/"answer"\s*:\s*"([^"]+)"/);
                         if (match && match[1]) {
                             try {
